@@ -27,6 +27,13 @@ ifeq ($(shell $(KIM_CONFIG_HELPER) --version 2> /dev/null),)
   $(error $(KIM_CONFIG_HELPER) utility is not available.  Something is wrong with your KIM API package setup)
 endif
 
+# there is no usable libcurl installation
+ifeq ($(shell curl-config --version 2> /dev/null),)
 kim_SYSINC  = $(shell $(KIM_CONFIG_HELPER) --includes)
 kim_SYSLIB  = $(shell $(KIM_CONFIG_HELPER) --ldlibs)
 kim_SYSPATH = $(shell $(KIM_CONFIG_HELPER) --ldflags)
+else
+kim_SYSINC  = $(shell $(KIM_CONFIG_HELPER) --includes) $(shell curl-config --cflags) -DLMP_KIM_CURL
+kim_SYSLIB  = $(shell $(KIM_CONFIG_HELPER) --ldlibs)   $(shell curl-config --libs)
+kim_SYSPATH = $(shell $(KIM_CONFIG_HELPER) --ldflags)
+endif

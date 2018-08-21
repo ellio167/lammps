@@ -4,7 +4,7 @@
 # used to automate the steps described in the README file in this dir
 
 from __future__ import print_function
-import sys,os,re,subprocess
+import sys,os,re,subprocess,hashlib
 
 # help message
 
@@ -50,6 +50,11 @@ See the list of example KIM models included by default here:
 https://openkim.org/kim-api
 in the "What is in the KIM API source package?" section
 """
+
+# known checksums for different KIM-API versions. used to validate the download.
+checksums = { \
+        'kim-api-v2.0.0-beta.1' : 'da92fa8b3f404fcc2a2ed6c291ea155c', \
+        }
 
 def error(str=None):
   if not str: print(help)
@@ -101,6 +106,17 @@ def geturl(url,fname):
   if not success:
     error("Failed to download source code with 'curl' or 'wget'")
   return
+
+def checkmd5sum(md5sum,fname):
+    with open(fname,'rb') as fh:
+        m = hashlib.md5()
+        while True:
+            data = fh.read(81920)
+            if not data:
+                break
+            m.update(data)
+    fh.close()
+    return m.hexdigest() == md5sum
 
 # parse args
 
@@ -197,6 +213,10 @@ if buildflag:
   print("Unpacking kim-api tarball ...")
   cmd = 'cd "%s"; rm -rf "%s"; tar -xJvf %s.txz' % (thisdir,version,version)
   subprocess.check_output(cmd,stderr=subprocess.STDOUT,shell=True)
+
+  if version in checksums:
+    if not checkmd5sum(checksums[version],'%s/%s.txz' % (thisdir,version)):
+      error("Checksum for kim-api library does not match")
 
   # configure kim-api
 

@@ -452,18 +452,24 @@ if(PKG_USER-VTK)
 endif()
 
 if(PKG_KIM)
+  find_package(CURL)
+  if(CURL_FOUND)
+    include_directories(${CURL_INCLUDE_DIRS}) 
+    list(APPEND LAMMPS_LINK_LIBS ${CURL_LIBRARIES})
+    add_definitions(-DLMP_KIM_CURL)
+  endif()
   option(DOWNLOAD_KIM "Download kim-api (instead of using the system's one)" OFF)
   if(DOWNLOAD_KIM)
     include(ExternalProject)
     ExternalProject_Add(kim_build
-      URL https://github.com/openkim/kim-api/archive/v1.9.5.tar.gz
-      URL_MD5 9f66efc128da33039e30659f36fc6d00
+      URL https://s3.openkim.org/kim-api/kim-api-v2.0.0-beta.1.txz
+      URL_MD5 da92fa8b3f404fcc2a2ed6c291ea155c
       BUILD_IN_SOURCE 1
       CONFIGURE_COMMAND <SOURCE_DIR>/configure --prefix=<INSTALL_DIR>
       )
     ExternalProject_get_property(kim_build INSTALL_DIR)
-    set(KIM_INCLUDE_DIRS ${INSTALL_DIR}/include/kim-api-v1)
-    set(KIM_LIBRARIES ${INSTALL_DIR}/lib/libkim-api-v1.so)
+    set(KIM_INCLUDE_DIRS ${INSTALL_DIR}/include/kim-api-v2)
+    set(KIM_LIBRARIES ${INSTALL_DIR}/lib/libkim-api-v2.so)
     list(APPEND LAMMPS_DEPS kim_build)
   else()
     find_package(KIM)

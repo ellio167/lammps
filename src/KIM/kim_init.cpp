@@ -13,8 +13,9 @@
 
 /* ----------------------------------------------------------------------
    Contributing authors: Axel Kohlmeyer (Temple U),
-                         Ryan S. Elliott (UMN)
-                         Ellad B. Tadmor (UMN)
+                         Ryan S. Elliott (UMN),
+                         Ellad B. Tadmor (UMN),
+                         Yaser Afshar (UMN)
 ------------------------------------------------------------------------- */
 
 /* ----------------------------------------------------------------------
@@ -76,6 +77,14 @@
 extern "C" {
 #include "KIM_SimulatorHeaders.h"
 }
+
+#ifdef SNUM
+#undef SNUM
+#endif
+
+#define SNUM(x)                                                \
+  static_cast<std::ostringstream const &>(std::ostringstream() \
+                                          << std::dec << x).str()
 
 using namespace LAMMPS_NS;
 
@@ -183,7 +192,7 @@ void KimInit::determine_model_type_and_units(char * model_name,
   {
     get_kim_unit_names(user_units, lengthUnit, energyUnit,
                        chargeUnit, temperatureUnit, timeUnit, error);
-    KIM_Model * kim_MO;
+    pkim = NULL;
     int kim_error = KIM_Model_Create(KIM_NUMBERING_zeroBased,
                                      lengthUnit,
                                      energyUnit,
@@ -192,19 +201,19 @@ void KimInit::determine_model_type_and_units(char * model_name,
                                      timeUnit,
                                      model_name,
                                      &units_accepted,
-                                     &kim_MO);
+                                     &pkim);
 
     if (kim_error)
       error->all(FLERR,"Unable to load KIM Simulator Model.");
 
     model_type = MO;
-    KIM_Model_Destroy(&kim_MO);
 
     if (units_accepted) {
       *model_units = new char[strlen(user_units)+1];
       strcpy(*model_units,user_units);
       return;
     } else if (unit_conversion_mode) {
+      KIM_Model_Destroy(&pkim);
       int const num_systems = 5;
       char const * const systems[num_systems]
           = {"metal", "real", "si", "cgs", "electron"};
@@ -219,15 +228,17 @@ void KimInit::determine_model_type_and_units(char * model_name,
                                      timeUnit,
                                      model_name,
                                      &units_accepted,
-                                     &kim_MO);
-        KIM_Model_Destroy(&kim_MO);
+                                     &pkim);
         if (units_accepted) {
           *model_units = new char[strlen(systems[i])+1];
           strcpy(*model_units,systems[i]);
           return;
         }
-      } error->all(FLERR,"KIM Model does not support any lammps unit system");
+        KIM_Model_Destroy(&pkim);
+      }
+      error->all(FLERR,"KIM Model does not support any lammps unit system");
     } else {
+      KIM_Model_Destroy(&pkim);
       error->all(FLERR,"KIM Model does not support the requested unit system");
     }
   }
@@ -358,6 +369,68 @@ void KimInit::do_init(char *model_name, char *user_units, char *model_units)
     // reset template map.
     KIM_SimulatorModel_OpenAndInitializeTemplateMap(simulatorModel);
   }
+  else if (model_type == MO)
+  {
+    int numberOfParameters;
+    KIM_Model_GetNumberOfParameters(pkim, &numberOfParameters);
+
+    std::string mesg = "\nThis model has ";
+    if (numberOfParameters)
+    {
+      KIM_DataType kim_DataType;
+      int extent;
+      char const *str_name = NULL;
+      char const *str_desc = NULL;
+
+      mesg += SNUM(numberOfParameters);
+      mesg += " mutable parameters. \n";
+
+      int max_len(0);
+      for (int i = 0; i < numberOfParameters; ++i)
+      {
+        KIM_Model_GetParameterMetadata(pkim, i, &kim_DataType,
+        &extent, &str_name, &str_desc);
+        max_len = MAX(max_len, strlen(str_name));
+      }
+      ++max_len;
+      mesg += "No.     |  Parameter name  ";
+      for (int i = 18; i < max_len; ++i)
+        mesg += " ";
+      mesg += "|  data type  |  extent\n";
+      for (int i = 0; i < 8 + MAX(18, max_len); ++i)
+        mesg += "-";
+      mesg += "-----------------------\n";
+      for (int i = 0; i < numberOfParameters; ++i)
+      {
+        KIM_Model_GetParameterMetadata(pkim, i, &kim_DataType,
+        &extent, &str_name, &str_desc);
+        mesg += SNUM(i+1);
+        for (int j = SNUM(i+1).size(); j < 8; ++j)
+          mesg += " ";
+        mesg += "| ";
+        mesg += str_name;
+        for (int j = strlen(str_name) + 1; j < MAX(18, strlen(str_name) + 1); ++j)
+          mesg += " ";
+        mesg += "|  \"";
+        mesg += KIM_DataType_ToString(kim_DataType);
+        if (KIM_DataType_Equal(kim_DataType, KIM_DATA_TYPE_Integer))
+          mesg += "\"  | ";
+        else
+          mesg += "\"   | ";
+        mesg += SNUM(extent);
+        mesg += "\n";
+      }
+    }
+    else
+      mesg += "No mutable parameters. \n";
+
+    KIM_Model_Destroy(&pkim);
+
+    if (comm->me == 0)
+    {
+      input->write_echo(mesg.c_str());
+    }
+  }
 
   // End output to log file
   kim_init_log_delimiter("end");
@@ -366,7 +439,7 @@ void KimInit::do_init(char *model_name, char *user_units, char *model_units)
 
 /* ---------------------------------------------------------------------- */
 
-void KimInit::kim_init_log_delimiter(std::string const begin_end) const
+void KimInit::kim_init_log_delimiter(std::string const &begin_end) const
 {
   if (comm->me == 0) {
     std::string mesg;
@@ -506,3 +579,5 @@ void KimInit::write_log_cite(char * model_name)
 
   KIM_Collections_Destroy(&coll);
 }
+
+#undef SNUM
